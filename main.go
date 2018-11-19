@@ -32,7 +32,7 @@ func logRequest(handler http.Handler) http.Handler {
 	})
 }
 
-func main() {
+func _main() {
 
 	uID, err := uuid.NewRandom()
 	if err != nil {

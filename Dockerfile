@@ -46,7 +46,11 @@ WORKDIR /usr/local/
 
 RUN curl -O https://dl.google.com/go/go1.11.2.linux-amd64.tar.gz
 
-RUN tar -C /usr/local -xzf go$VERSION.$OS-$ARCH.tar.gz
+RUN tar -C /usr/local -xzf go1.11.2.linux-amd64.tar.gz
+
+WORKDIR /go/src/
+
+COPY . .
 
 
 
