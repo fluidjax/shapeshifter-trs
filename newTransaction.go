@@ -1,11 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+
+	log "github.com/Sirupsen/logrus"
 
 )
 
@@ -17,20 +18,17 @@ type Transaction struct {
 
 //NewTransaction - Insert Transaction into Dynamo DB
 func NewTransaction(tx Transaction){
-	fmt.Printf("NewTransaction\n")
 
-	config := &aws.Config{
-		Region:   aws.String("us-west-2"),
-		Endpoint: aws.String("http://localhost:8000"),
-	}
+	sess, err := session.NewSession(&aws.Config{
+        Region: aws.String("eu-west-2")},
+    )
 
-	sess := session.Must(session.NewSession(config))
-
-	svc := dynamodb.New(sess)
+    // Create DynamoDB client
+    svc := dynamodb.New(sess)
 
 	info, err := dynamodbattribute.MarshalMap(tx)
 		if err != nil {
-			panic(fmt.Sprintf("failed to marshal the movie, %v", err))
+			log.Fatal("failed to marshal the tx", err)
 		}
 
 	input := &dynamodb.PutItemInput{
@@ -38,10 +36,11 @@ func NewTransaction(tx Transaction){
 			TableName: aws.String("Transactions"),
 		}
 
-		_, err = svc.PutItem(input)
+	_, err = svc.PutItem(input)
 		if err != nil {
-			fmt.Println(err.Error())
+			log.Warn(err.Error())
 			return
 		}
-
+		log.Info("Created Item for ", tx.UID)
+		return
 }

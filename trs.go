@@ -224,8 +224,8 @@ func verify(message []byte, ring_signature []byte, public_keys []byte) bool {
 //------------------------------------------
 
 //TrsTest - test threshold-ring signature scheme
-	// func TrsTest(){
-	func main(){	
+	func TrsTest(){
+	// func main(){	
 	p := parameters{number_of_participants: 10, threshold: 5}
 	init_context(p)
 

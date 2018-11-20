@@ -25,14 +25,30 @@ RUN LD_LIBRARY_PATH=. ./qredo_test
 
 RUN apt-get --yes install curl
 WORKDIR /usr/local/
-RUN ls
 RUN curl -O https://dl.google.com/go/go1.11.2.linux-amd64.tar.gz
 RUN tar -C /usr/local -xzf go1.11.2.linux-amd64.tar.gz
 ENV PATH=$PATH:/usr/local/go/bin
-WORKDIR /go/src/
 ENV LD_LIBRARY_PATH=/usr/local/Qredo-Crypto-Library/qredolib/build/binaries/lib:$LD_LIBRARY_PATH
+WORKDIR /root/go/src
+
 COPY . .
-CMD go run trs.go
+
+# Install AWS SDK
+
+RUN apt-get --yes install python-setuptools python-dev build-essential
+RUN apt-get --yes install python-pip
+RUN pip install awscli --upgrade --user
+RUN mv .aws ~/
+
+# Get Go Deps
+
+RUN go get github.com/Sirupsen/logrus
+RUN go get github.com/aws/aws-sdk-go/aws
+RUN go get github.com/google/uuid
+
+EXPOSE 5000
+
+CMD go run *.go
 
 
 
