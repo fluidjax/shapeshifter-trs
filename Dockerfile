@@ -20,15 +20,6 @@ WORKDIR /root/go/src
 
 COPY . .
 
-# Get Go Deps
-RUN go get github.com/Sirupsen/logrus
-RUN go get github.com/aws/aws-sdk-go/aws
-RUN go get github.com/google/uuid
-
-# Install AWS SDK - For DynamoDB
-RUN pip install awscli --upgrade --user
-RUN mv .aws ~/
-
 # Install Crypto Library
 WORKDIR /usr/local/
 RUN token=$(cat /root/go/src/.gitToken) && git clone https://$token@github.com/qredo/Qredo-Crypto-Library.git
@@ -42,6 +33,16 @@ RUN make install
 RUN cp /usr/local/Qredo-Crypto-Library/qredolib/build/binaries/bin/qredo_test /usr/local/Qredo-Crypto-Library/qredolib/build/binaries/lib
 WORKDIR /usr/local/Qredo-Crypto-Library/qredolib/build/binaries/lib
 RUN LD_LIBRARY_PATH=. ./qredo_test
+
+# Install AWS SDK - For DynamoDB
+RUN pip install awscli --upgrade --user
+WORKDIR /root/go/src
+RUN mv .aws ~/
+
+# Get Go Deps
+RUN go get github.com/Sirupsen/logrus
+RUN go get github.com/aws/aws-sdk-go/aws
+RUN go get github.com/google/uuid
 
 EXPOSE 5000
 

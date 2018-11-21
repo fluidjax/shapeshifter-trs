@@ -1,11 +1,12 @@
 package main
 
 import (
-	// "fmt"
 	"encoding/json"
-	"encoding/hex"
+	"fmt"
+
+	// "encoding/hex"
 	"net/http"
-	"os"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/google/uuid"
@@ -13,13 +14,18 @@ import (
 
 //Config - server setup details
 type Config struct {
-	ShapeshifterLeader string `json:"shapeshifterLeader"`
-	TRSPublicKey       string `json:"trsPublicKey"`
-	TRSPrivateKey      string `json:"trsPrivateKey"`
+	DirectoryServer string `json:"directoryServer"`
 }
 
 //ServerConfig - config details for this sever
 var ServerConfig Config
+
+func logRequest(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("%s %s %s\n", r.RemoteAddr, r.Method, r.URL)
+		handler.ServeHTTP(w, r)
+	})
+}
 
 func newTxHandler(w http.ResponseWriter, r *http.Request) {
 	uID, err := uuid.NewRandom()
@@ -40,39 +46,65 @@ func newTxHandler(w http.ResponseWriter, r *http.Request) {
 
 func getStatus(w http.ResponseWriter, r *http.Request) {
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ServerConfig)
+	if ServerConfig.DirectoryServer != "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(ServerConfig)
+	} else {
+		w.Write([]byte("Server Not Yet Confgured POST Directory Server URL To /setdirectory"))
+	}
+
 }
 
-func logRequest(handler http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("%s %s %s\n", r.RemoteAddr, r.Method, r.URL)
-		handler.ServeHTTP(w, r)
-	})
+func handleSetDirectory(w http.ResponseWriter, r *http.Request) {
+
+	decoder := json.NewDecoder(r.Body)
+	err := decoder.Decode(&ServerConfig)
+	if err != nil {
+		log.Warn(err)
+	}
+	confJSON, _ := json.MarshalIndent(ServerConfig, "", "\t")
+	fmt.Printf("%s\n", confJSON)
+
+	go pollForTransactions()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ServerConfig)
 }
 
 func handleGetKeys(w http.ResponseWriter, r *http.Request) {
 
-	p := parameters{number_of_participants: 10, threshold: 5}
-	InitContext(p)
+	// p := parameters{number_of_participants: 10, threshold: 5}
+	// InitContext(p)
 
-	pK, sK := Keygen()
+	// pK, sK := Keygen()
 
-	ServerConfig.TRSPublicKey = hex.EncodeToString(pK)
-	ServerConfig.TRSPrivateKey = hex.EncodeToString(sK)
+	// ServerConfig.TRSPublicKey = hex.EncodeToString(pK)
+	// ServerConfig.TRSPrivateKey = hex.EncodeToString(sK)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(ServerConfig)
 
 }
 
-func init() {
-	ServerConfig.ShapeshifterLeader = os.Getenv("SHAPESHIFTER_LEADER")
+func pollForTransactions(){
+
+	directoryString := "http://" + ServerConfig.DirectoryServer + "/getTransactions"
+
+	for{
+	txResp, err := http.Get(directoryString)
+	if err != nil {
+		log.Warn(err)
+	}else {
+		fmt.Printf("txResp %v", &txResp)
+	}
+	time.Sleep(2000 * time.Millisecond)
+	}
 }
 
 func main() {
 
 	http.HandleFunc("/", getStatus)
+	http.HandleFunc("/setdirectory", handleSetDirectory)
 	http.HandleFunc("/getkeys", handleGetKeys)
 	http.HandleFunc("/newtransaction", newTxHandler)
 

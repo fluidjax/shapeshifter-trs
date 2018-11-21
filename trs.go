@@ -240,8 +240,6 @@ func verify(message []byte, ring_signature []byte, public_keys []byte) bool {
 
 	signers := []uint{0, 1, 2, 3, 4}
 
-	// signers := []uint{4, 5, 6, 7, 8}
-
 	private_keys := make([][]byte, p.number_of_participants)
 
 	// create public/private keys
