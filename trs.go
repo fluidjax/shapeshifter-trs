@@ -28,13 +28,13 @@ type parameters struct {
 
 //------------------------------------------
 
-//!
+// InitContext - set up new ring
 //! \brief initializes the context, this should happen only once
 //!
 //! \param parameters input  : the system parameters
 //! \param result output     : True if initialized correctly, false otherwise
 //!
-func init_context(p parameters) bool {
+func InitContext(p parameters) bool {
 
 	// create parameters struct and fill it in
 	parameters_extended := C.qredo_parameters{}
@@ -55,13 +55,13 @@ func init_context(p parameters) bool {
 
 //------------------------------------------
 
-//!
+//Keygen - Creates keys
 //! \brief Creates the public key and private key
 //!
 //! \param public_key output : the public key created
 //! \param secret_key output : the private key created
 //!
-func keygen() ([]byte, []byte) {
+func Keygen() (publicKey []byte, privateKey[]byte) {
 
 	// get length of the parameters
 	var public_key_length C.ulong
@@ -90,15 +90,15 @@ func keygen() ([]byte, []byte) {
 		panic("Failed to create public private key")
 	}
 
-	public_key := C.GoBytes(
+	publicKey = C.GoBytes(
 		ptr_public_key,
 		C.int(public_key_length))
 
-	private_key := C.GoBytes(
+	privateKey = C.GoBytes(
 		ptr_private_key,
 		C.int(ptr_private_key_length))
 
-	return public_key, private_key
+	return publicKey, privateKey
 }
 
 //------------------------------------------
@@ -227,7 +227,7 @@ func verify(message []byte, ring_signature []byte, public_keys []byte) bool {
 	func TrsTest(){
 	// func main(){	
 	p := parameters{number_of_participants: 10, threshold: 5}
-	init_context(p)
+	InitContext(p)
 
 	// concatanated public keys
 	var public_keys []byte
@@ -246,7 +246,7 @@ func verify(message []byte, ring_signature []byte, public_keys []byte) bool {
 
 	// create public/private keys
 	for i := uint(0); i < p.number_of_participants; i++ {
-		public_key, private_key := keygen()
+		public_key, private_key := Keygen()
 		private_keys[i] = private_key
 		// concat public keys together
 		public_keys = append(public_keys, public_key...)

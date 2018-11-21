@@ -2,9 +2,10 @@ package main
 
 import (
 	// "fmt"
+	"encoding/json"
+	"encoding/hex"
 	"net/http"
 	"os"
-	"encoding/json"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/google/uuid"
@@ -13,12 +14,14 @@ import (
 //Config - server setup details
 type Config struct {
 	ShapeshifterLeader string `json:"shapeshifterLeader"`
+	TRSPublicKey       string `json:"trsPublicKey"`
+	TRSPrivateKey      string `json:"trsPrivateKey"`
 }
 
 //ServerConfig - config details for this sever
 var ServerConfig Config
 
-func newTxHandler(w http.ResponseWriter, r *http.Request){
+func newTxHandler(w http.ResponseWriter, r *http.Request) {
 	uID, err := uuid.NewRandom()
 	if err != nil {
 		log.Warn(err)
@@ -37,10 +40,6 @@ func newTxHandler(w http.ResponseWriter, r *http.Request){
 
 func getStatus(w http.ResponseWriter, r *http.Request) {
 
-	// fmt.Fprintf(w, "Your leader is %v\n", ServerConfig.ShapeshifterLeader)
-
-	// // fmt.Fprintf(w, "Hello, you've requested: %s\n", r.URL.Path)
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(ServerConfig)
 }
@@ -52,13 +51,29 @@ func logRequest(handler http.Handler) http.Handler {
 	})
 }
 
-func init(){
+func handleGetKeys(w http.ResponseWriter, r *http.Request) {
+
+	p := parameters{number_of_participants: 10, threshold: 5}
+	InitContext(p)
+
+	pK, sK := Keygen()
+
+	ServerConfig.TRSPublicKey = hex.EncodeToString(pK)
+	ServerConfig.TRSPrivateKey = hex.EncodeToString(sK)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ServerConfig)
+
+}
+
+func init() {
 	ServerConfig.ShapeshifterLeader = os.Getenv("SHAPESHIFTER_LEADER")
 }
 
 func main() {
 
 	http.HandleFunc("/", getStatus)
+	http.HandleFunc("/getkeys", handleGetKeys)
 	http.HandleFunc("/newtransaction", newTxHandler)
 
 	if err := http.ListenAndServe(":5000", logRequest(http.DefaultServeMux)); err != nil {
