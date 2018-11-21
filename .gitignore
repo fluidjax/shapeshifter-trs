@@ -5,3 +5,4 @@
 !.elasticbeanstalk/*.global.yml
 /Dockerrun.aws.json
 .gitToken
+.ebignore

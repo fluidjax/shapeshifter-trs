@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/google/uuid"
@@ -26,8 +27,12 @@ func newTxHandler(w http.ResponseWriter, r *http.Request){
 }
 
 func getStatus(w http.ResponseWriter, r *http.Request) {
-	
-	fmt.Fprintf(w, "Hello, you've requested: %s\n", r.URL.Path)
+
+	shapeshifterLeader := os.Getenv("SHAPESHIFTER_LEADER")
+
+	fmt.Fprintf(w, "Your leader is %v\n", shapeshifterLeader)
+
+	// fmt.Fprintf(w, "Hello, you've requested: %s\n", r.URL.Path)
 }
 
 func logRequest(handler http.Handler) http.Handler {
