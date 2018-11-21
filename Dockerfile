@@ -30,7 +30,6 @@ RUN pip install awscli --upgrade --user
 RUN mv .aws ~/
 
 # Install Crypto Library
-ARG token
 WORKDIR /usr/local/
 RUN token=$(cat /root/go/src/.gitToken) && git clone https://$token@github.com/qredo/Qredo-Crypto-Library.git
 WORKDIR /usr/local/Qredo-Crypto-Library/

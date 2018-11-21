@@ -1,13 +1,22 @@
 package main
 
 import (
-	"fmt"
+	// "fmt"
 	"net/http"
 	"os"
+	"encoding/json"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/google/uuid"
 )
+
+//Config - server setup details
+type Config struct {
+	ShapeshifterLeader string `json:"shapeshifterLeader"`
+}
+
+//ServerConfig - config details for this sever
+var ServerConfig Config
 
 func newTxHandler(w http.ResponseWriter, r *http.Request){
 	uID, err := uuid.NewRandom()
@@ -28,11 +37,12 @@ func newTxHandler(w http.ResponseWriter, r *http.Request){
 
 func getStatus(w http.ResponseWriter, r *http.Request) {
 
-	shapeshifterLeader := os.Getenv("SHAPESHIFTER_LEADER")
+	// fmt.Fprintf(w, "Your leader is %v\n", ServerConfig.ShapeshifterLeader)
 
-	fmt.Fprintf(w, "Your leader is %v\n", shapeshifterLeader)
+	// // fmt.Fprintf(w, "Hello, you've requested: %s\n", r.URL.Path)
 
-	// fmt.Fprintf(w, "Hello, you've requested: %s\n", r.URL.Path)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ServerConfig)
 }
 
 func logRequest(handler http.Handler) http.Handler {
@@ -40,6 +50,10 @@ func logRequest(handler http.Handler) http.Handler {
 		log.Printf("%s %s %s\n", r.RemoteAddr, r.Method, r.URL)
 		handler.ServeHTTP(w, r)
 	})
+}
+
+func init(){
+	ServerConfig.ShapeshifterLeader = os.Getenv("SHAPESHIFTER_LEADER")
 }
 
 func main() {
