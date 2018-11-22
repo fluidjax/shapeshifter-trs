@@ -1,6 +1,9 @@
 package main
 
 import (
+
+	"github.com/google/uuid"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -16,8 +19,21 @@ type Transaction struct {
 	TXID string`json:"txID"`
 }
 
-//NewTransaction - Insert Transaction into Dynamo DB
-func NewTransaction(tx Transaction){
+//CreateTransaction - Insert Transaction into Dynamo DB
+func CreateTransaction() (tx Transaction){
+
+	uID, err := uuid.NewRandom()
+	if err != nil {
+		log.Warn(err)
+	}
+
+	txID, err := uuid.NewRandom()
+	if err != nil {
+		log.Warn(err)
+	}
+
+	tx = Transaction{uID.String(), txID.String()}
+
 
 	sess, err := session.NewSession(&aws.Config{
         Region: aws.String("eu-west-2")},
@@ -42,5 +58,5 @@ func NewTransaction(tx Transaction){
 			return
 		}
 		log.Info("Created Item for ", tx.UID)
-		return
+		return tx
 }

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/google/uuid"
 )
 
 //Config - server setup details
@@ -27,21 +26,22 @@ func logRequest(handler http.Handler) http.Handler {
 	})
 }
 
-func newTxHandler(w http.ResponseWriter, r *http.Request) {
-	uID, err := uuid.NewRandom()
-	if err != nil {
-		log.Warn(err)
+func handleTransaction(w http.ResponseWriter, r *http.Request) {
+
+	switch r.Method {
+	case http.MethodGet:
+		// Serve the resource.
+	case http.MethodPost:
+		transaction := CreateTransaction()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(transaction)
+	case http.MethodPut:
+		// Update an existing record.
+	case http.MethodDelete:
+		// Remove the record.
+	default:
+		// Give an error message.
 	}
-
-	txID, err := uuid.NewRandom()
-	if err != nil {
-		log.Warn(err)
-	}
-
-	tx := Transaction{uID.String(), txID.String()}
-
-	NewTransaction(tx)
-
 }
 
 func getStatus(w http.ResponseWriter, r *http.Request) {
@@ -55,13 +55,27 @@ func getStatus(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func handleSetDirectory(w http.ResponseWriter, r *http.Request) {
+func handleDirectory(w http.ResponseWriter, r *http.Request) {
 
-	decoder := json.NewDecoder(r.Body)
-	err := decoder.Decode(&ServerConfig)
-	if err != nil {
-		log.Warn(err)
+	fmt.Printf("handleDirectory\n")
+
+	switch r.Method {
+	case http.MethodGet:
+		// Serve the resource.
+	case http.MethodPost:
+		decoder := json.NewDecoder(r.Body)
+		err := decoder.Decode(&ServerConfig)
+		if err != nil {
+			log.Warn(err)
+		}
+	case http.MethodPut:
+		// Update an existing record.
+	case http.MethodDelete:
+		ServerConfig.DirectoryServer = ""
+	default:
+		// Give an error message.
 	}
+
 	confJSON, _ := json.MarshalIndent(ServerConfig, "", "\t")
 	fmt.Printf("%s\n", confJSON)
 
@@ -86,27 +100,27 @@ func handleGetKeys(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func pollForTransactions(){
+func pollForTransactions() {
 
-	directoryString := "http://" + ServerConfig.DirectoryServer + "/getTransactions"
+	directoryString := "http://" + ServerConfig.DirectoryServer + "/transaction"
 
-	for{
-	txResp, err := http.Get(directoryString)
-	if err != nil {
-		log.Warn(err)
-	}else {
-		fmt.Printf("txResp %v", &txResp)
-	}
-	time.Sleep(2000 * time.Millisecond)
+	for ServerConfig.DirectoryServer != "" {
+		txResp, err := http.Get(directoryString)
+		if err != nil {
+			log.Warn(err)
+		} else {
+			fmt.Printf("txResp %v", &txResp)
+		}
+		time.Sleep(2000 * time.Millisecond)
 	}
 }
 
 func main() {
 
 	http.HandleFunc("/", getStatus)
-	http.HandleFunc("/setdirectory", handleSetDirectory)
-	http.HandleFunc("/getkeys", handleGetKeys)
-	http.HandleFunc("/newtransaction", newTxHandler)
+	http.HandleFunc("/directory", handleDirectory)
+	http.HandleFunc("/keys", handleGetKeys)
+	http.HandleFunc("/transaction", handleTransaction)
 
 	if err := http.ListenAndServe(":5000", logRequest(http.DefaultServeMux)); err != nil {
 		panic(err)
