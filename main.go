@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	// "encoding/hex"
+	"math/rand"
 	"net/http"
 	"time"
 
@@ -47,7 +48,7 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 func handleServerConfig(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
-	
+
 	case http.MethodPost:
 		decoder := json.NewDecoder(r.Body)
 		err := decoder.Decode(&ServerConfig)
@@ -94,7 +95,8 @@ func pollForTransactions() {
 		} else {
 			fmt.Printf("txResp %v", &txResp)
 		}
-		time.Sleep(2000 * time.Millisecond)
+		pollInterval := rand.Intn(5) * 1000
+		time.Sleep(time.Duration(pollInterval) * time.Millisecond)
 	}
 }
 
