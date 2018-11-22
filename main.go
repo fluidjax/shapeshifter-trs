@@ -44,30 +44,17 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getStatus(w http.ResponseWriter, r *http.Request) {
-
-	if ServerConfig.DirectoryServer != "" {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(ServerConfig)
-	} else {
-		w.Write([]byte("Server Not Yet Confgured POST Directory Server URL To /setdirectory"))
-	}
-
-}
-
-func handleDirectory(w http.ResponseWriter, r *http.Request) {
-
-	fmt.Printf("handleDirectory\n")
+func handleServerConfig(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
-	case http.MethodGet:
-		// Serve the resource.
+	
 	case http.MethodPost:
 		decoder := json.NewDecoder(r.Body)
 		err := decoder.Decode(&ServerConfig)
 		if err != nil {
 			log.Warn(err)
 		}
+		go pollForTransactions()
 	case http.MethodPut:
 		// Update an existing record.
 	case http.MethodDelete:
@@ -76,13 +63,9 @@ func handleDirectory(w http.ResponseWriter, r *http.Request) {
 		// Give an error message.
 	}
 
-	confJSON, _ := json.MarshalIndent(ServerConfig, "", "\t")
-	fmt.Printf("%s\n", confJSON)
-
-	go pollForTransactions()
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(ServerConfig)
+
 }
 
 func handleGetKeys(w http.ResponseWriter, r *http.Request) {
@@ -117,8 +100,7 @@ func pollForTransactions() {
 
 func main() {
 
-	http.HandleFunc("/", getStatus)
-	http.HandleFunc("/directory", handleDirectory)
+	http.HandleFunc("/serverconfig", handleServerConfig)
 	http.HandleFunc("/keys", handleGetKeys)
 	http.HandleFunc("/transaction", handleTransaction)
 
