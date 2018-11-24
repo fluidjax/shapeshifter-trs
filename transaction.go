@@ -35,8 +35,9 @@ type Message struct {
 
 //Policy - who can sign
 type Policy struct {
-	Participants []Participant `json:"participants"`
-	Threshold    uint          `json:"threshold"`
+	Participants         []Participant `json:"participants"`
+	NumberOfParticipants uint          `json:"numberOfParticipants"`
+	Threshold            uint          `json:"threshold"`
 }
 
 //Participant - Details of signers
@@ -52,7 +53,7 @@ func createRing(newTx Transaction) (tx Transaction, err error) {
 
 	var params Parameters
 
-	params.numberOfParticipants = uint(len(tx.Policy.Participants))
+	params.numberOfParticipants = tx.Policy.NumberOfParticipants
 	params.threshold = tx.Policy.Threshold
 
 	InitContext(params)
@@ -85,6 +86,7 @@ func CreateTransaction(newTX Transaction) (tx Transaction, err error) {
 	tx.TxID = txID.String()
 	tx.CreatedAt = time.Now()
 	tx.UpdatedAt = time.Now()
+	tx.Policy.NumberOfParticipants = uint(len(tx.Policy.Participants))
 	tx, err = createRing(tx)
 
 	sess, err := session.NewSession(&aws.Config{

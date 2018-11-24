@@ -1,14 +1,46 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
-	// "fmt"
-
-	// "encoding/hex"
 	"net/http"
+	"time"
+	"math/rand"
 
 	log "github.com/Sirupsen/logrus"
 )
+
+//SignerRequest - Similar to Transaction
+type SignerRequest struct {
+	TxID      string    `json:"txID"`
+	UserID    string    `json:"userID"`
+	CreatedAt time.Time `json:"createdAt"`
+	Message   Message   `json:"message"`
+}
+
+func inviteSigners(tx Transaction) {
+
+	var signRequest SignerRequest
+
+	signRequest.TxID = tx.TxID
+	signRequest.UserID = tx.UserID
+	signRequest.CreatedAt = time.Now()
+	signRequest.Message = tx.Message
+
+	signRequestJSON, err := json.Marshal(signRequest)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	for i, p := range tx.Policy.Participants {
+		log.Info("Inviting ", i)
+		_, err = http.Post(p.URL+"/signingrequest", "application/json", bytes.NewBuffer(signRequestJSON))
+		if err != nil {
+			log.Warn(err)
+		}
+		
+	}
+}
 
 func logRequest(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -23,30 +55,72 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	switch r.Method {
-	
+
 	case http.MethodPost:
 		decoder := json.NewDecoder(r.Body)
 		err = decoder.Decode(&tx)
 		tx, err = CreateTransaction(tx)
-		if err != nil{
+		if err != nil {
 			log.Warn(err)
 		}
 
+		go inviteSigners(tx)
+
 	case http.MethodPut:
-		
+
 	case http.MethodDelete:
-		
+
 	default:
-		
+
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(tx)
 }
 
+func handleSigningRequest(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+
+		var signingRequest Transaction
+		var err error
+
+		decoder := json.NewDecoder(r.Body)
+		err = decoder.Decode(&signingRequest)
+
+		log.Info("Got Signing Request for ", signingRequest.TxID)
+		if err != nil {
+			log.Warn(err)
+		}
+
+		w.WriteHeader(200)
+
+		//Insert logic for approving message
+		approveMessage(true)
+
+
+	case http.MethodPut:
+
+	case http.MethodDelete:
+
+	default:
+
+	}
+
+}
+
+func approveMessage(approval bool){
+
+	if approval {
+		approvalInterval := rand.Intn(5) * 1000
+		time.Sleep(time.Duration(approvalInterval) * time.Millisecond)
+		log.Info("Message approved")
+	}
+}
 func main() {
 
 	http.HandleFunc("/transaction", handleTransaction)
+	http.HandleFunc("/signingrequest", handleSigningRequest)
 
 	if err := http.ListenAndServe(":5000", logRequest(http.DefaultServeMux)); err != nil {
 		panic(err)
