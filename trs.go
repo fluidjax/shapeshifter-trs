@@ -19,9 +19,9 @@ import "fmt"
 //!
 //! \brief The system parameters
 //!
-type parameters struct {
+type Parameters struct {
 	// number of participants
-	number_of_participants uint
+	numberOfParticipants uint
 	// ring signature threshold
 	threshold uint
 }
@@ -34,14 +34,14 @@ type parameters struct {
 //! \param parameters input  : the system parameters
 //! \param result output     : True if initialized correctly, false otherwise
 //!
-func InitContext(p parameters) bool {
+func InitContext(p Parameters) bool {
 
 	// create parameters struct and fill it in
 	parameters_extended := C.qredo_parameters{}
 
 	C.qredo_init_parameters(
 		&parameters_extended,
-		C.ulong(p.number_of_participants),
+		C.ulong(p.numberOfParticipants),
 		C.ulong(p.threshold))
 
 	result := C.qredo_init_context(parameters_extended)
@@ -226,7 +226,7 @@ func verify(message []byte, ring_signature []byte, public_keys []byte) bool {
 //TrsTest - test threshold-ring signature scheme
 	func TrsTest(){
 	// func main(){	
-	p := parameters{number_of_participants: 10, threshold: 5}
+	p := Parameters{numberOfParticipants: 10, threshold: 5}
 	InitContext(p)
 
 	// concatanated public keys
@@ -240,10 +240,10 @@ func verify(message []byte, ring_signature []byte, public_keys []byte) bool {
 
 	signers := []uint{0, 1, 2, 3, 4}
 
-	private_keys := make([][]byte, p.number_of_participants)
+	private_keys := make([][]byte, p.numberOfParticipants)
 
 	// create public/private keys
-	for i := uint(0); i < p.number_of_participants; i++ {
+	for i := uint(0); i < p.numberOfParticipants; i++ {
 		public_key, private_key := Keygen()
 		private_keys[i] = private_key
 		// concat public keys together
