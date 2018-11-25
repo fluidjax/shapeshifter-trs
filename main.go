@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"math/rand"
 	"net/http"
 	"time"
@@ -19,38 +18,8 @@ type SignerRequest struct {
 	CreatedAt time.Time `json:"createdAt"`
 	Message   Message   `json:"message"`
 	URL       string    `json:"url"`
-	PublicKey string    `json:"publicKey"`
+	RingIndex int       `json:"ringIndex"`
 	Approval  bool      `json:"approval"`
-}
-
-func inviteSigners(tx Transaction) {
-
-	var signRequest SignerRequest
-
-	signRequest.TxID = tx.TxID
-	signRequest.UserID = tx.UserID
-	signRequest.LeaderURL = tx.LeaderURL
-	signRequest.CreatedAt = time.Now()
-	signRequest.Message = tx.Message
-
-	for i, p := range tx.Policy.Participants {
-		// log.Info("Inviting ", tx.Policy.Participants[i].URL)
-		signRequest.URL = tx.Policy.Participants[i].URL
-		signRequest.PublicKey = tx.Policy.Participants[i].PK
-
-		signRequestJSON, err := json.Marshal(signRequest)
-		if err != nil {
-			log.Fatalln(err)
-		}
-
-		_, err = http.Post(p.URL+"/signingrequest", "application/json", bytes.NewBuffer(signRequestJSON))
-		if err != nil {
-			log.Warn(err)
-		}
-		//TODO: Need to handle closing the request - throws an error on 404
-		// defer resp.Body.Close()
-
-	}
 }
 
 func logRequest(handler http.Handler) http.Handler {
@@ -75,7 +44,7 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 			log.Warn(err)
 		}
 
-		go inviteSigners(tx)
+		inviteApprovers(tx)
 
 	case http.MethodPut:
 		tx := r.URL.Path[len("/transaction/"):]
@@ -84,16 +53,24 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 		decoder := json.NewDecoder(r.Body)
 		err = decoder.Decode(&approvedRequest)
 
-		mJSON, _ := json.MarshalIndent(approvedRequest, "", "\t")
-		fmt.Printf("%s\n", mJSON)
-
 		updatedTX, err := ApproveTransaction(tx, approvedRequest)
 		if err != nil {
 			log.Warn(err)
 		}
 
-		mJSON, _ = json.MarshalIndent(updatedTX, "", "\t")
-		fmt.Printf("%s\n", mJSON)
+		var approvals uint
+
+		for _, p := range updatedTX.Policy.Participants {
+			if p.Approved {
+				approvals++
+			}
+		}
+
+		if approvals == updatedTX.Policy.Threshold {
+			log.Info("Let's go!")
+		} else {
+			log.Info("Not enough signers yet")
+		}
 
 	case http.MethodDelete:
 
@@ -105,7 +82,41 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(tx)
 }
 
-func handleSigningRequest(w http.ResponseWriter, r *http.Request) {
+func inviteApprovers(tx Transaction) {
+
+	var approvalRequest SignerRequest
+
+	approvalRequest.TxID = tx.TxID
+	approvalRequest.UserID = tx.UserID
+	approvalRequest.LeaderURL = tx.LeaderURL
+	approvalRequest.CreatedAt = time.Now()
+	approvalRequest.Message = tx.Message
+
+	for i, p := range tx.Policy.Participants {
+		// log.Info("Inviting ", tx.Policy.Participants[i].URL)
+		approvalRequest.URL = tx.Policy.Participants[i].URL
+		approvalRequest.RingIndex = i
+
+		go postApprovalRequest(p.URL, approvalRequest)
+
+	}
+}
+
+func postApprovalRequest(url string, approvalRequest SignerRequest) {
+
+	qpprovalRequestJSON, err := json.Marshal(approvalRequest)
+	if err != nil {
+		log.Warn(err)
+	}
+	_, err = http.Post(url+"/approvalrequest", "application/json", bytes.NewBuffer(qpprovalRequestJSON))
+	if err != nil {
+		log.Warn(err)
+	}
+	//TODO: Need to handle closing the request - throws an error on 404
+	// defer resp.Body.Close()
+}
+
+func handleApprovalRequest(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 
@@ -165,10 +176,20 @@ func approveMessage(approval bool, signingRequest SignerRequest) {
 		defer resp.Body.Close()
 	}
 }
+
+func handleSign(w http.ResponseWriter, r *http.Request) {
+
+	switch r.Method {
+	case http.MethodPost:
+		log.Info("Handle Sign")
+	}
+}
+
 func main() {
 
 	http.HandleFunc("/transaction/", handleTransaction)
-	http.HandleFunc("/signingrequest", handleSigningRequest)
+	http.HandleFunc("/approvalrequest", handleApprovalRequest)
+	http.HandleFunc("/sign", handleSign)
 
 	if err := http.ListenAndServe(":5000", logRequest(http.DefaultServeMux)); err != nil {
 		panic(err)

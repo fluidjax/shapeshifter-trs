@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -120,22 +121,35 @@ func CreateTransaction(newTX Transaction) (tx Transaction, err error) {
 //ApproveTransaction - Update transaction when signing approval is received
 func ApproveTransaction(txID string, sr SignerRequest) (tx Transaction, err error) {
 
-	log.Info("Going to update: ", txID)
+	updateString := "SET policy.participants[" + strconv.Itoa(sr.RingIndex) + "].approved=:a"
 
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String("eu-west-2")},
 	)
 	svc := dynamodb.New(sess)
 
-	//hard bit goes here
+	input := &dynamodb.UpdateItemInput{
+		TableName: aws.String("Transactions"),
+		Key: map[string]*dynamodb.AttributeValue{
+			"txID": {
+				S: aws.String(sr.TxID),
+			},
+		},
+		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+			":a": {
+				BOOL: aws.Bool(true),
+			},
+		},
+		ReturnValues:     aws.String("ALL_NEW"),
+		UpdateExpression: aws.String(updateString),
+	}
 
-	input := &dynamodb.UpdateItemInput{}
-
-	_, err = svc.UpdateItem(input)
-
+	updatedTx, err := svc.UpdateItem(input)
 	if err != nil {
 		log.Warn(err.Error())
 	}
+
+	dynamodbattribute.UnmarshalMap(updatedTx.Attributes, &tx)
 
 	return tx, err
 
