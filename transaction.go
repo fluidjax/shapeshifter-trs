@@ -18,6 +18,7 @@ import (
 type Transaction struct {
 	TxID          string    `json:"txID"`
 	UserID        string    `json:"userID"`
+	LeaderURL     string    `json:"leaderURL"`
 	RingSignature string    `json:"ringSignature"`
 	Signers       []int64   `json:"signers"`
 	CreatedAt     time.Time `json:"createdAt"`
@@ -42,11 +43,13 @@ type Policy struct {
 
 //Participant - Details of signers
 type Participant struct {
-	URL string `json:"url"`
-	SK  string `json:"sK"`
-	PK  string `json:"pk"`
+	URL      string `json:"url"`
+	SK       string `json:"sK"`
+	PK       string `json:"pk"`
+	Approved bool   `json:"approved"`
 }
 
+//Generate pk and sk for all participants
 func createRing(newTx Transaction) (tx Transaction, err error) {
 
 	tx = newTx
@@ -114,6 +117,26 @@ func CreateTransaction(newTX Transaction) (tx Transaction, err error) {
 	return tx, err
 }
 
-func ReadTransaction() {
+//ApproveTransaction - Update transaction when signing approval is received
+func ApproveTransaction(txID string, sr SignerRequest) (tx Transaction, err error) {
+
+	log.Info("Going to update: ", txID)
+
+	sess, err := session.NewSession(&aws.Config{
+		Region: aws.String("eu-west-2")},
+	)
+	svc := dynamodb.New(sess)
+
+	//hard bit goes here
+
+	input := &dynamodb.UpdateItemInput{}
+
+	_, err = svc.UpdateItem(input)
+
+	if err != nil {
+		log.Warn(err.Error())
+	}
+
+	return tx, err
 
 }
