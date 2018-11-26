@@ -21,6 +21,7 @@ type Transaction struct {
 	UserID        string    `json:"userID"`
 	LeaderURL     string    `json:"leaderURL"`
 	RingSignature string    `json:"ringSignature"`
+	SignersCount  int       `json:"signersCount"`
 	Signers       []int64   `json:"signers"`
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedAt     time.Time `json:"updatedAt"`
@@ -118,10 +119,10 @@ func CreateTransaction(newTX Transaction) (tx Transaction, err error) {
 	return tx, err
 }
 
-//ApproveTransaction - Update transaction when signing approval is received
+//UpdateTransaction - Update transaction when signing approval is received
 func UpdateTransaction(txID string, sr SignerRequest) (tx Transaction, err error) {
 
-	updateString := "SET policy.participants[" + strconv.Itoa(sr.RingIndex) + "].approved=:a"
+	updateString := "SET policy.participants[" + strconv.Itoa(sr.RingIndex) + "].approved=:a add signersCount :inc"
 
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String("eu-west-2")},
@@ -136,18 +137,19 @@ func UpdateTransaction(txID string, sr SignerRequest) (tx Transaction, err error
 			},
 		},
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+			":inc": {
+				N: aws.String("1"),
+			},
 			":a": {
 				BOOL: aws.Bool(true),
 			},
 		},
-		ReturnValues:     aws.String("ALL_NEW"),
-		UpdateExpression: aws.String(updateString),
+		ReturnValues:        aws.String("ALL_NEW"),
+		UpdateExpression:    aws.String(updateString),
+		ConditionExpression: aws.String("policy.threshold > signersCount"),
 	}
 
 	updatedTx, err := svc.UpdateItem(input)
-	if err != nil {
-		log.Warn(err.Error())
-	}
 
 	dynamodbattribute.UnmarshalMap(updatedTx.Attributes, &tx)
 
