@@ -119,7 +119,7 @@ func CreateTransaction(newTX Transaction) (tx Transaction, err error) {
 }
 
 //ApproveTransaction - Update transaction when signing approval is received
-func ApproveTransaction(txID string, sr SignerRequest) (tx Transaction, err error) {
+func UpdateTransaction(txID string, sr SignerRequest) (tx Transaction, err error) {
 
 	updateString := "SET policy.participants[" + strconv.Itoa(sr.RingIndex) + "].approved=:a"
 

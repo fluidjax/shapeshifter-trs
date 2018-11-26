@@ -20,6 +20,8 @@ type SignerRequest struct {
 	URL       string    `json:"url"`
 	RingIndex int       `json:"ringIndex"`
 	Approval  bool      `json:"approval"`
+	PK        string    `json:"pk"`
+	SK        string    `json:"sk"`
 }
 
 func logRequest(handler http.Handler) http.Handler {
@@ -44,7 +46,7 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 			log.Warn(err)
 		}
 
-		inviteApprovers(tx)
+		go inviteApprovers(tx)
 
 	case http.MethodPut:
 		tx := r.URL.Path[len("/transaction/"):]
@@ -53,7 +55,7 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 		decoder := json.NewDecoder(r.Body)
 		err = decoder.Decode(&approvedRequest)
 
-		updatedTX, err := ApproveTransaction(tx, approvedRequest)
+		updatedTX, err := UpdateTransaction(tx, approvedRequest)
 		if err != nil {
 			log.Warn(err)
 		}
@@ -64,12 +66,6 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 			if p.Approved {
 				approvals++
 			}
-		}
-
-		if approvals == updatedTX.Policy.Threshold {
-			log.Info("Let's go!")
-		} else {
-			log.Info("Not enough signers yet")
 		}
 
 	case http.MethodDelete:
@@ -112,6 +108,12 @@ func postApprovalRequest(url string, approvalRequest SignerRequest) {
 	if err != nil {
 		log.Warn(err)
 	}
+
+	// if approvals == updatedTX.Policy.Threshold {
+	// 	requestSignatures(updatedTX)
+	// } else {
+	// 	log.Info("Not enough signers yet")
+	// }
 	//TODO: Need to handle closing the request - throws an error on 404
 	// defer resp.Body.Close()
 }
@@ -154,7 +156,7 @@ func approveMessage(approval bool, signingRequest SignerRequest) {
 		time.Sleep(time.Duration(approvalInterval) * time.Millisecond)
 
 		signingRequest.Approval = true
-		log.Info("Message approved")
+		log.Info("Message approved, gonna respond to: ", signingRequest.LeaderURL)
 
 		url := signingRequest.LeaderURL + "/transaction/" + signingRequest.TxID
 
@@ -177,6 +179,23 @@ func approveMessage(approval bool, signingRequest SignerRequest) {
 	}
 }
 
+func requestSignatures(tx Transaction) {
+
+	log.Info("We have enough signers")
+	// for i, p := range tx.Policy.Participants {
+
+	// 	var sigRequest Transaction
+	// 	sigRequest.TxID = tx.TxID
+	// 	sigRequest.LeaderURL = tx.LeaderURL
+	// 	sigRequest.Message = tx.Message
+	// 	// go postSigRequest()
+	// }
+}
+
+func postSigRequest(sigRequest SignerRequest) {
+	// http.Post()
+}
+
 func handleSign(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
@@ -189,7 +208,7 @@ func main() {
 
 	http.HandleFunc("/transaction/", handleTransaction)
 	http.HandleFunc("/approvalrequest", handleApprovalRequest)
-	http.HandleFunc("/sign", handleSign)
+	http.HandleFunc("/participantsign", handleSign)
 
 	if err := http.ListenAndServe(":5000", logRequest(http.DefaultServeMux)); err != nil {
 		panic(err)
