@@ -51,13 +51,13 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 		go inviteApprovers(tx)
 
 	case http.MethodPut:
-		tx := r.URL.Path[len("/transaction/"):]
+		txID := r.URL.Path[len("/transaction/"):]
 		var approvedRequest SignerRequest
 
 		decoder := json.NewDecoder(r.Body)
 		err = decoder.Decode(&approvedRequest)
 
-		updatedTX, err := UpdateTransaction(tx, approvedRequest)
+		updatedTX, err := UpdateTransaction(txID, approvedRequest)
 		if err != nil {
 			log.Warn(err)
 		}
@@ -68,6 +68,16 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 			if p.Approved {
 				approvals++
 			}
+		}
+
+		if approvals < updatedTX.Policy.Threshold {
+			log.Info("Wating for more approvals")
+		}
+		if approvals == updatedTX.Policy.Threshold {
+			go requestSignatures(updatedTX)
+		}
+		if approvals > updatedTX.Policy.Threshold {
+			log.Info("Don't need this one")
 		}
 
 	case http.MethodDelete:
@@ -95,7 +105,9 @@ func inviteApprovers(tx Transaction) {
 		approvalRequest.URL = tx.Policy.Participants[i].URL
 		approvalRequest.RingIndex = i
 
+		
 		go postApprovalRequest(p.URL, approvalRequest)
+		
 
 	}
 }
@@ -183,7 +195,7 @@ func approveMessage(approval bool, signingRequest SignerRequest) {
 
 func requestSignatures(tx Transaction) {
 
-	log.Info("We have enough signers")
+	log.Info("Got enough approvals, let's go!")
 	// for i, p := range tx.Policy.Participants {
 
 	// 	var sigRequest Transaction
@@ -204,6 +216,11 @@ func handleSign(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		log.Info("Handle Sign")
 	}
+}
+
+func participantSign(tx Transaction, signer int) {
+	log.Info("Participant sign ", tx.TxID)
+
 }
 
 func main() {
