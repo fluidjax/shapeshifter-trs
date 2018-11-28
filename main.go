@@ -26,6 +26,16 @@ type SignerRequest struct {
 	SK        string    `json:"sk"`
 }
 
+// ParticipantSignature - forming the ring
+type ParticipantSignature struct {
+	Message   Message   `json:"message"`
+	SK        string    `json:"sk"`
+	TxID      string    `json:"txID"`
+	UserID    string    `json:"userID"`
+	LeaderURL string    `json:"leaderURL"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 func logRequest(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("%s %s %s\n", r.RemoteAddr, r.Method, r.URL)
@@ -121,14 +131,6 @@ func postApprovalRequest(url string, approvalRequest SignerRequest) {
 	if err != nil {
 		log.Warn(err)
 	}
-
-	// if approvals == updatedTX.Policy.Threshold {
-	// 	requestSignatures(updatedTX)
-	// } else {
-	// 	log.Info("Not enough signers yet")
-	// }
-	//TODO: Need to handle closing the request - throws an error on 404
-	// defer resp.Body.Close()
 }
 
 func handleApprovalRequest(w http.ResponseWriter, r *http.Request) {
@@ -195,14 +197,18 @@ func approveMessage(approval bool, signingRequest SignerRequest) {
 func setUpSignatures(tx Transaction) {
 
 	log.Info("Got enough approvals, let's go!")
-	// for i, p := range tx.Policy.Participants {
 
-	// 	var sigRequest Transaction
-	// 	sigRequest.TxID = tx.TxID
-	// 	sigRequest.LeaderURL = tx.LeaderURL
-	// 	sigRequest.Message = tx.Message
-	// 	// go postSigRequest()
-	// }
+	// mJSON, _ := json.MarshalIndent(tx, "", "\t")
+	// fmt.Printf("%s\n", mJSON)
+
+	for _, p := range tx.Policy.Participants {
+		if p.Approved {
+			var partSign ParticipantSignature
+			partSign.Message = tx.Message
+			partSign.SK = p.SK
+		}
+	}
+
 }
 
 func postSigRequest(sigRequest SignerRequest) {
