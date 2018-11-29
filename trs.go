@@ -112,7 +112,7 @@ func Keygen() (publicKey []byte, privateKey[]byte) {
 //! \param public_keys input  : array of all the public keys concatanated
 //! \param signature   output : the result signature buffer
 //!
-func participant_sign(message []byte, private_key []byte, signers []uint, public_keys []byte) []byte {
+func ParticipantSign(message []byte, private_key []byte, signers []uint, public_keys []byte) []byte {
 
 	// TODO check if signers is set correctly
 	signature_length := C.qredo_get_participant_signature_size()
@@ -257,7 +257,7 @@ func verify(message []byte, ring_signature []byte, public_keys []byte) bool {
 	// participant sign
 	for i := uint(0); i < p.threshold; i++ {
 		signer_index := signers[i]
-		participant_signature := participant_sign(message, private_keys[signer_index], signers, public_keys)
+		participant_signature := ParticipantSign(message, private_keys[signer_index], signers, public_keys)
 		fmt.Println("participant_signature = ", participant_signature)
 		participants_signatures = append(participants_signatures, participant_signature...)
 	}

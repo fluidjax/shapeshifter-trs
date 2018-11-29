@@ -2,18 +2,22 @@ package main
 
 import (
 	"bytes"
+	"encoding/gob"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
 )
 
-//SignerRequest - Similar to Transaction
-type SignerRequest struct {
+//ApprovalRequest - Similar to Transaction
+type ApprovalRequest struct {
 	TxID      string    `json:"txID"`
 	UserID    string    `json:"userID"`
 	LeaderURL string    `json:"leaderURL"`
@@ -26,14 +30,18 @@ type SignerRequest struct {
 	SK        string    `json:"sk"`
 }
 
-// ParticipantSignature - forming the ring
-type ParticipantSignature struct {
-	Message   Message   `json:"message"`
-	SK        string    `json:"sk"`
-	TxID      string    `json:"txID"`
-	UserID    string    `json:"userID"`
-	LeaderURL string    `json:"leaderURL"`
-	CreatedAt time.Time `json:"createdAt"`
+// SignatureRequest - forming the ring
+type SignatureRequest struct {
+	TxID       string    `json:"txID"`
+	UserID     string    `json:"userID"`
+	LeaderURL  string    `json:"leaderURL"`
+	RingIndex  int       `json:"PartIndex"`
+	CreatedAt  time.Time `json:"createdAt"`
+	Message    Message   `json:"message"`
+	Signers    []uint    `json:"signers"`
+	PublicKeys []string  `json:"publicKeys"`
+	SK         string    `json:"sk"`
+	PSig       string    `json:"pSig"`
 }
 
 func logRequest(handler http.Handler) http.Handler {
@@ -62,14 +70,19 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPut:
 		txID := r.URL.Path[len("/transaction/"):]
-		var approvedRequest SignerRequest
+		var approvedRequest ApprovalRequest
 
 		decoder := json.NewDecoder(r.Body)
 		err = decoder.Decode(&approvedRequest)
 
-		updatedTX, err := UpdateTransaction(txID, approvedRequest)
+		updatedTX, err := StoreApproval(txID, approvedRequest)
 		if err != nil {
-			log.Info(err)
+
+			if strings.Contains(err.Error(), "ConditionalCheckFailedException:") {
+				log.Info("Got enough signers already thanks!")
+			} else {
+				log.Warn(err)
+			}
 		} else {
 
 			var approvals uint
@@ -103,7 +116,7 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 
 func inviteApprovers(tx Transaction) {
 
-	var approvalRequest SignerRequest
+	var approvalRequest ApprovalRequest
 
 	approvalRequest.TxID = tx.TxID
 	approvalRequest.UserID = tx.UserID
@@ -112,7 +125,7 @@ func inviteApprovers(tx Transaction) {
 	approvalRequest.Message = tx.Message
 
 	for i, p := range tx.Policy.Participants {
-		log.Info("Inviting ", tx.Policy.Participants[i].URL)
+		// log.Info("Inviting ", tx.Policy.Participants[i].URL)
 		approvalRequest.URL = tx.Policy.Participants[i].URL
 		approvalRequest.RingIndex = i
 
@@ -121,7 +134,7 @@ func inviteApprovers(tx Transaction) {
 	}
 }
 
-func postApprovalRequest(url string, approvalRequest SignerRequest) {
+func postApprovalRequest(url string, approvalRequest ApprovalRequest) {
 
 	qpprovalRequestJSON, err := json.Marshal(approvalRequest)
 	if err != nil {
@@ -137,21 +150,22 @@ func handleApprovalRequest(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 
-		var signingRequest SignerRequest
+		var approvalRequest ApprovalRequest
 		var err error
 
 		decoder := json.NewDecoder(r.Body)
-		err = decoder.Decode(&signingRequest)
+		err = decoder.Decode(&approvalRequest)
 
-		log.Info("Got Signing Request for ", signingRequest.TxID)
+		log.Info("Got Signing Request for ", approvalRequest.TxID)
 		if err != nil {
 			log.Warn(err)
 		}
 
-		w.WriteHeader(200)
-
 		//Insert logic for approving message
-		approveMessage(true, signingRequest)
+		approveMessage(true, approvalRequest)
+
+		// this is wrong - I should return the approval here
+		w.WriteHeader(200)
 
 	case http.MethodPut:
 
@@ -163,7 +177,7 @@ func handleApprovalRequest(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func approveMessage(approval bool, signingRequest SignerRequest) {
+func approveMessage(approval bool, signingRequest ApprovalRequest) {
 
 	if approval {
 		//Add a delay to make a better demo
@@ -198,33 +212,122 @@ func setUpSignatures(tx Transaction) {
 
 	log.Info("Got enough approvals, let's go!")
 
-	// mJSON, _ := json.MarshalIndent(tx, "", "\t")
-	// fmt.Printf("%s\n", mJSON)
+	var signersSlice []uint
+	var publicKeySlice []string
 
-	for _, p := range tx.Policy.Participants {
+	for i, p := range tx.Policy.Participants {
+
+		publicKeySlice = append(publicKeySlice, tx.Policy.Participants[i].PK)
+
 		if p.Approved {
-			var partSign ParticipantSignature
-			partSign.Message = tx.Message
-			partSign.SK = p.SK
+			signersSlice = append(signersSlice, uint(i))
 		}
 	}
 
-}
+	for i, p := range tx.Policy.Participants {
 
-func postSigRequest(sigRequest SignerRequest) {
-	// http.Post()
-}
+		if p.Approved {
+			var partSign SignatureRequest
+			partSign.TxID = tx.TxID
+			partSign.UserID = tx.UserID
+			partSign.RingIndex = i
+			partSign.Message = tx.Message
+			partSign.LeaderURL = tx.LeaderURL
+			partSign.CreatedAt = time.Now()
+			partSign.SK = p.SK
+			partSign.Signers = signersSlice
+			partSign.PublicKeys = publicKeySlice
 
-func handleSign(w http.ResponseWriter, r *http.Request) {
-
-	switch r.Method {
-	case http.MethodPost:
-		log.Info("Handle Sign")
+			go postSignatureRequest(partSign, tx.Policy.Participants[i].URL)
+		}
 	}
 }
 
-func participantSign(tx Transaction, signer int) {
-	log.Info("Participant sign ", tx.TxID)
+func postSignatureRequest(sigRequest SignatureRequest, url string) {
+
+	sigRequestJSON, err := json.Marshal(sigRequest)
+	if err != nil {
+		log.Warn(err)
+	}
+	resp, err := http.Post(url+"/signaturerequest", "application/json", bytes.NewBuffer(sigRequestJSON))
+	if err != nil {
+		log.Warn(err)
+	}
+
+	var sigRequestResponse SignatureRequest
+
+	decoder := json.NewDecoder(resp.Body)
+	err = decoder.Decode(&sigRequestResponse)
+	if err != nil {
+		log.Warn(err)
+	}
+
+	tx, err := StorePSig(sigRequestResponse)
+	if err != nil {
+		log.Warn(err)
+	}
+
+	go leaderSign(tx)
+
+	// mJSON, _ := json.MarshalIndent(sigRequestResponse, "", "\t")
+	// fmt.Printf("%s\n", mJSON)
+}
+
+func handleSignatureRequest(w http.ResponseWriter, r *http.Request) {
+
+	if r.Method == http.MethodPost {
+
+		var sigDetails SignatureRequest
+		var err error
+
+		decoder := json.NewDecoder(r.Body)
+		err = decoder.Decode(&sigDetails)
+		if err != nil {
+			log.Warn("here ", err)
+		}
+
+		log.Info("Got Signing Request for ", sigDetails.TxID)
+
+		//turn the message into a byte array
+		encBuf := new(bytes.Buffer)
+		err = gob.NewEncoder(encBuf).Encode(sigDetails.Message)
+		if err != nil {
+			log.Warn(err)
+		}
+
+		message := encBuf.Bytes()
+
+		privateKey, err := hex.DecodeString(sigDetails.SK)
+		var pubKeyBytes []byte
+
+		for _, p := range sigDetails.PublicKeys {
+
+			pByte, _ := hex.DecodeString(p)
+
+			pubKeyBytes = append(pubKeyBytes, pByte...)
+		}
+
+		params := Parameters{uint(len(sigDetails.PublicKeys)), uint(len(sigDetails.Signers))}
+
+		InitContext(params)
+
+		pSig := ParticipantSign(message, privateKey, sigDetails.Signers, pubKeyBytes)
+
+		sigDetails.PSig = hex.EncodeToString(pSig)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sigDetails)
+
+	}
+}
+
+func leaderSign(tx Transaction) {
+
+	for i, p := range tx.Policy.Participants {
+		if p.PSig != "" {
+			fmt.Printf("Got sig for \t%v\n", i)
+		}
+	}
 
 }
 
@@ -239,7 +342,7 @@ func main() {
 
 	http.HandleFunc("/transaction/", handleTransaction)
 	http.HandleFunc("/approvalrequest", handleApprovalRequest)
-	http.HandleFunc("/participantsign", handleSign)
+	http.HandleFunc("/signaturerequest", handleSignatureRequest)
 
 	if err := http.ListenAndServe(port, logRequest(http.DefaultServeMux)); err != nil {
 		panic(err)
