@@ -23,7 +23,6 @@ import (
 type Transaction struct {
 	TxID          string    `json:"txID"`
 	UserID        string    `json:"userID"`
-	LeaderURL     string    `json:"leaderURL"`
 	RingSignature string    `json:"ringSignature"`
 	SignersCount  int       `json:"signersCount"`
 	CreatedAt     time.Time `json:"createdAt"`
@@ -49,6 +48,7 @@ type Policy struct {
 //Participant - Details of signers
 type Participant struct {
 	URL      string `json:"url"`
+	Leader   bool   `json:"leader"`
 	SK       string `json:"sK"`
 	PK       string `json:"pk"`
 	Approved bool   `json:"approved"`

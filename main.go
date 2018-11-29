@@ -20,7 +20,6 @@ import (
 type ApprovalRequest struct {
 	TxID      string    `json:"txID"`
 	UserID    string    `json:"userID"`
-	LeaderURL string    `json:"leaderURL"`
 	CreatedAt time.Time `json:"createdAt"`
 	Message   Message   `json:"message"`
 	URL       string    `json:"url"`
@@ -34,7 +33,6 @@ type ApprovalRequest struct {
 type SignatureRequest struct {
 	TxID       string    `json:"txID"`
 	UserID     string    `json:"userID"`
-	LeaderURL  string    `json:"leaderURL"`
 	RingIndex  int       `json:"PartIndex"`
 	CreatedAt  time.Time `json:"createdAt"`
 	Message    Message   `json:"message"`
@@ -59,6 +57,9 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		decoder := json.NewDecoder(r.Body)
 		err = decoder.Decode(&tx)
+
+		//TODO: check there is only one leader
+
 		tx, err = CreateTransaction(tx)
 		if err != nil {
 			log.Warn(err)
@@ -78,17 +79,18 @@ func setUpApprovalRequest(tx Transaction) {
 
 	approvalRequest.TxID = tx.TxID
 	approvalRequest.UserID = tx.UserID
-	approvalRequest.LeaderURL = tx.LeaderURL
 	approvalRequest.CreatedAt = time.Now()
 	approvalRequest.Message = tx.Message
 
 	for i, p := range tx.Policy.Participants {
-		// log.Info("Inviting ", tx.Policy.Participants[i].URL)
 		approvalRequest.URL = tx.Policy.Participants[i].URL
 		approvalRequest.RingIndex = i
 
-		go postApprovalRequest(p.URL, approvalRequest)
-
+		if p.Leader {
+			StoreApproval(approvalRequest)
+		} else {
+			go postApprovalRequest(p.URL, approvalRequest)
+		}
 	}
 }
 
@@ -111,6 +113,7 @@ func postApprovalRequest(url string, approvalRequest ApprovalRequest) {
 		log.Warn(err)
 	}
 
+	//this needs to be refactored maybe
 	updatedTX, err := StoreApproval(approvalRequestResponse)
 	if err != nil {
 
@@ -195,7 +198,6 @@ func setUpSignatures(tx Transaction) {
 			partSign.UserID = tx.UserID
 			partSign.RingIndex = i
 			partSign.Message = tx.Message
-			partSign.LeaderURL = tx.LeaderURL
 			partSign.CreatedAt = time.Now()
 			partSign.SK = p.SK
 			partSign.Signers = signersSlice
@@ -230,8 +232,16 @@ func postSignatureRequest(sigRequest SignatureRequest, url string) {
 		log.Warn(err)
 	}
 
-	go leaderSign(tx)
-
+	sigCount := 0
+	for i, p := range tx.Policy.Participants {
+		if p.PSig != "" {
+			fmt.Printf("Got sig for \t%v\n", i)
+			sigCount++
+		}
+		if uint(sigCount) == tx.Policy.Threshold {
+			go leaderSign(tx)
+		}
+	}
 }
 
 func handleSignatureRequest(w http.ResponseWriter, r *http.Request) {
@@ -255,16 +265,13 @@ func handleSignatureRequest(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Warn(err)
 		}
-
 		message := encBuf.Bytes()
 
 		privateKey, err := hex.DecodeString(sigDetails.SK)
 		var pubKeyBytes []byte
 
 		for _, p := range sigDetails.PublicKeys {
-
 			pByte, _ := hex.DecodeString(p)
-
 			pubKeyBytes = append(pubKeyBytes, pByte...)
 		}
 
@@ -284,11 +291,45 @@ func handleSignatureRequest(w http.ResponseWriter, r *http.Request) {
 
 func leaderSign(tx Transaction) {
 
-	for i, p := range tx.Policy.Participants {
-		if p.PSig != "" {
-			fmt.Printf("Got sig for \t%v\n", i)
-		}
+	//turn the message into a byte array
+	encBuf := new(bytes.Buffer)
+	err := gob.NewEncoder(encBuf).Encode(tx.Message)
+	if err != nil {
+		log.Warn(err)
 	}
+	message := encBuf.Bytes()
+
+	//find the leader and signers
+
+	var leaderIndex uint
+	var signers []uint
+	var privateKey []byte
+	var publicKeys []byte
+	var pSigs []byte
+
+	for i, p := range tx.Policy.Participants{
+		if p.Leader{
+			leaderIndex=uint(i)
+			privateKey, _ = hex.DecodeString(p.SK)
+		}
+		if p.PSig != ""{
+			signers = append(signers, uint(i))
+
+			pSig, _ := hex.DecodeString(p.PSig)
+			pSigs = append(pSigs, pSig...)
+		}
+		pk, _ := hex.DecodeString(p.PK)
+		publicKeys = append(publicKeys, pk...)
+
+	}
+
+	params := Parameters{uint(len(tx.Policy.Participants)), uint(tx.Policy.Threshold)}
+
+	InitContext(params)
+
+	ringSig:= leader_sign(message, leaderIndex, privateKey, signers, publicKeys, pSigs)
+
+	fmt.Printf("ringSig %v", ringSig)
 
 }
 
