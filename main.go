@@ -56,9 +56,7 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 	var tx Transaction
 	var err error
 
-	switch r.Method {
-
-	case http.MethodPost:
+	if r.Method == http.MethodPost {
 		decoder := json.NewDecoder(r.Body)
 		err = decoder.Decode(&tx)
 		tx, err = CreateTransaction(tx)
@@ -66,47 +64,7 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 			log.Warn(err)
 		}
 
-		go inviteApprovers(tx)
-
-	case http.MethodPut:
-		txID := r.URL.Path[len("/transaction/"):]
-		var approvedRequest ApprovalRequest
-
-		decoder := json.NewDecoder(r.Body)
-		err = decoder.Decode(&approvedRequest)
-
-		updatedTX, err := StoreApproval(txID, approvedRequest)
-		if err != nil {
-
-			if strings.Contains(err.Error(), "ConditionalCheckFailedException:") {
-				log.Info("Got enough signers already thanks!")
-			} else {
-				log.Warn(err)
-			}
-		} else {
-
-			var approvals uint
-
-			for _, p := range updatedTX.Policy.Participants {
-				if p.Approved {
-					approvals++
-				}
-			}
-
-			if approvals < updatedTX.Policy.Threshold {
-				log.Info("Wating for more approvals")
-			}
-			if approvals == updatedTX.Policy.Threshold {
-				go setUpSignatures(updatedTX)
-			}
-			if approvals > updatedTX.Policy.Threshold {
-				log.Info("Don't need this one")
-			}
-		}
-
-	case http.MethodDelete:
-
-	default:
+		go setUpApprovalRequest(tx)
 
 	}
 
@@ -114,7 +72,7 @@ func handleTransaction(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(tx)
 }
 
-func inviteApprovers(tx Transaction) {
+func setUpApprovalRequest(tx Transaction) {
 
 	var approvalRequest ApprovalRequest
 
@@ -140,15 +98,55 @@ func postApprovalRequest(url string, approvalRequest ApprovalRequest) {
 	if err != nil {
 		log.Warn(err)
 	}
-	_, err = http.Post(url+"/approvalrequest", "application/json", bytes.NewBuffer(qpprovalRequestJSON))
+	resp, err := http.Post(url+"/approvalrequest", "application/json", bytes.NewBuffer(qpprovalRequestJSON))
 	if err != nil {
 		log.Warn(err)
 	}
+
+	var approvalRequestResponse ApprovalRequest
+
+	decoder := json.NewDecoder(resp.Body)
+	err = decoder.Decode(&approvalRequestResponse)
+	if err != nil {
+		log.Warn(err)
+	}
+
+	updatedTX, err := StoreApproval(approvalRequestResponse)
+	if err != nil {
+
+		if strings.Contains(err.Error(), "ConditionalCheckFailedException:") {
+			log.Info("Got enough signers already thanks!")
+		} else {
+			log.Warn(err)
+		}
+	} else {
+
+		var approvals uint
+
+		for _, p := range updatedTX.Policy.Participants {
+			if p.Approved {
+				approvals++
+			}
+		}
+
+		if approvals < updatedTX.Policy.Threshold {
+			log.Info("Wating for more approvals")
+		}
+		if approvals == updatedTX.Policy.Threshold {
+			go setUpSignatures(updatedTX)
+		}
+		if approvals > updatedTX.Policy.Threshold {
+			log.Info("Don't need this one")
+		}
+	}
+
+	// mJSON, _ := json.MarshalIndent(sigRequestResponse, "", "\t")
+	// fmt.Printf("%s\n", mJSON)
+
 }
 
 func handleApprovalRequest(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodPost:
+	if r.Method == http.MethodPost {
 
 		var approvalRequest ApprovalRequest
 		var err error
@@ -161,51 +159,16 @@ func handleApprovalRequest(w http.ResponseWriter, r *http.Request) {
 			log.Warn(err)
 		}
 
-		//Insert logic for approving message
-		approveMessage(true, approvalRequest)
-
-		// this is wrong - I should return the approval here
-		w.WriteHeader(200)
-
-	case http.MethodPut:
-
-	case http.MethodDelete:
-
-	default:
-
-	}
-
-}
-
-func approveMessage(approval bool, signingRequest ApprovalRequest) {
-
-	if approval {
-		//Add a delay to make a better demo
 		approvalInterval := rand.Intn(5) * 1000
 		time.Sleep(time.Duration(approvalInterval) * time.Millisecond)
 
-		signingRequest.Approval = true
-		log.Info("Message approved, gonna respond to: ", signingRequest.LeaderURL)
+		approvalRequest.Approval = true
 
-		url := signingRequest.LeaderURL + "/transaction/" + signingRequest.TxID
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(approvalRequest)
 
-		signingRequestJSON, err := json.Marshal(signingRequest)
-		if err != nil {
-			log.Warn(err)
-		}
-
-		//No convenience method for PUT so having to do this:
-		client := &http.Client{}
-		request, err := http.NewRequest("PUT", url, bytes.NewBuffer(signingRequestJSON))
-		request.Header.Add("Content-Type", "application/json")
-		_, err = client.Do(request)
-		if err != nil {
-			log.Warn(err)
-		}
-
-		//TODO: this is going to cause a crash on 404
-		// defer resp.Body.Close()
 	}
+
 }
 
 func setUpSignatures(tx Transaction) {
@@ -269,8 +232,6 @@ func postSignatureRequest(sigRequest SignatureRequest, url string) {
 
 	go leaderSign(tx)
 
-	// mJSON, _ := json.MarshalIndent(sigRequestResponse, "", "\t")
-	// fmt.Printf("%s\n", mJSON)
 }
 
 func handleSignatureRequest(w http.ResponseWriter, r *http.Request) {

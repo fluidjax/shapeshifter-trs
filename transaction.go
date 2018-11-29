@@ -137,7 +137,7 @@ func CreateTransaction(newTX Transaction) (tx Transaction, err error) {
 }
 
 //StoreApproval - Update transaction when signing approval is received
-func StoreApproval(txID string, sr ApprovalRequest) (tx Transaction, err error) {
+func StoreApproval(sr ApprovalRequest) (tx Transaction, err error) {
 
 	config := &aws.Config{
 		Region: aws.String("eu-west-2"),
