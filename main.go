@@ -18,25 +18,26 @@ import (
 //ApprovalRequest - Similar to Transaction
 type ApprovalRequest struct {
 	TxID      string    `json:"txID"`
-	CreatedAt time.Time `json:"createdAt"`
+	RingIndex int       `json:"ringIndex"`
 	Message   Message   `json:"message"`
 	URL       string    `json:"url"`
-	RingIndex int       `json:"ringIndex"`
 	Approval  bool      `json:"approval"`
 	PK        string    `json:"pk"`
 	SK        string    `json:"sk"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // SignatureRequest - forming the ring
 type SignatureRequest struct {
 	TxID       string    `json:"txID"`
 	RingIndex  int       `json:"PartIndex"`
-	CreatedAt  time.Time `json:"createdAt"`
 	Message    Message   `json:"message"`
+	URL        string    `json:"url"`
 	Signers    []uint    `json:"signers"`
 	PublicKeys []string  `json:"publicKeys"`
 	SK         string    `json:"sk"`
 	PSig       string    `json:"pSig"`
+	CreatedAt  time.Time `json:"createdAt"`
 }
 
 func logRequest(handler http.Handler) http.Handler {
@@ -85,12 +86,13 @@ func setUpApprovalRequest(tx Transaction) {
 		if p.Leader {
 			StoreApproval(approvalRequest)
 		} else {
-			go postApprovalRequest(p.URL, approvalRequest)
+			go postApprovalRequest(approvalRequest)
 		}
 	}
 }
 
-func postApprovalRequest(url string, approvalRequest ApprovalRequest) {
+//Leader-side
+func postApprovalRequest(approvalRequest ApprovalRequest) {
 
 	qpprovalRequestJSON, err := json.Marshal(approvalRequest)
 	if err != nil {
@@ -114,7 +116,7 @@ func postApprovalRequest(url string, approvalRequest ApprovalRequest) {
 	if err != nil {
 
 		if strings.Contains(err.Error(), "ConditionalCheckFailedException:") {
-			log.Info("Got enough signers already thanks!")
+			log.Info("Got enough approvals already thanks!")
 		} else {
 			log.Warn(err)
 		}
@@ -147,7 +149,7 @@ func handleApprovalRequest(w http.ResponseWriter, r *http.Request) {
 		decoder := json.NewDecoder(r.Body)
 		err = decoder.Decode(&approvalRequest)
 
-		log.Info("Got Signing Request for ", approvalRequest.TxID)
+		log.Info("Got Approval Request for ", approvalRequest.TxID)
 		if err != nil {
 			log.Warn(err)
 		}
@@ -169,6 +171,23 @@ func setUpSignatures(tx Transaction) {
 
 	log.Info("Got enough approvals, let's go!")
 
+	// //shuffle participants to put signers at the front
+	// var reOrdered []Participant
+	// //Put the true ones at the start
+	// for _, p := range tx.Policy.Participants {
+	// 	if p.Approved {
+	// 		reOrdered = append(reOrdered, p)
+	// 	}
+	// }
+	// //And the false ones at the end
+	// for _, p := range tx.Policy.Participants {
+	// 	if !p.Approved {
+	// 		reOrdered = append(reOrdered, p)
+	// 	}
+	// }
+	// //Replace the participants with the re-ordered ones
+	// tx.Policy.Participants = reOrdered
+
 	var signersSlice []uint
 	var publicKeySlice []string
 
@@ -188,6 +207,7 @@ func setUpSignatures(tx Transaction) {
 			sigReq.TxID = tx.TxID
 			sigReq.RingIndex = i
 			sigReq.Message = tx.Message
+			sigReq.URL = tx.Policy.Participants[i].URL
 			sigReq.CreatedAt = time.Now()
 			sigReq.SK = p.SK
 			sigReq.Signers = signersSlice
@@ -199,20 +219,20 @@ func setUpSignatures(tx Transaction) {
 					log.Warn(err)
 				}
 			} else {
-				go postSignatureRequest(sigReq, tx.Policy.Participants[i].URL)
+				go postSignatureRequest(sigReq)
 			}
 		}
 	}
 }
 
 //Leader-Side
-func postSignatureRequest(sigRequest SignatureRequest, url string) {
+func postSignatureRequest(sigRequest SignatureRequest) {
 
 	sigRequestJSON, err := json.Marshal(sigRequest)
 	if err != nil {
 		log.Warn(err)
 	}
-	resp, err := http.Post(url+"/signaturerequest", "application/json", bytes.NewBuffer(sigRequestJSON))
+	resp, err := http.Post(sigRequest.URL+"/signaturerequest", "application/json", bytes.NewBuffer(sigRequestJSON))
 	if err != nil {
 		log.Warn(err)
 	}
@@ -231,10 +251,10 @@ func postSignatureRequest(sigRequest SignatureRequest, url string) {
 		log.Warn(err)
 	}
 
+	//Wait until we have the threshold number of signatures
 	sigCount := 0
 	for _, p := range tx.Policy.Participants {
 		if p.PSig != "" {
-			// fmt.Printf("Got sig for \t%v\n", i)
 			sigCount++
 		}
 		if uint(sigCount) == tx.Policy.Threshold {
@@ -333,27 +353,32 @@ func leaderSign(tx Transaction) {
 
 	}
 
-	var ringSig []byte
-
 	params := Parameters{uint(len(tx.Policy.Participants)), uint(tx.Policy.Threshold)}
+
+	//Preparing to Sign
+	log.Info("signers ", signers)
 
 	InitContext(params)
 
-	//leader_sign fails probabalistically so retry
-	for ringSig, err = leader_sign(message, leaderIndex, privateKey, signers, publicKeys, pSigs); err != nil; {
-		log.Warn(err)
-
-		retryInterval := rand.Intn(5) * 1000
-		time.Sleep(time.Duration(retryInterval) * time.Millisecond)
-
-		err = nil
-
-		InitContext(params)
-
-		ringSig, err = leader_sign(message, leaderIndex, privateKey, signers, publicKeys, pSigs)
-	}
+	ringSig, err := leader_sign(message, leaderIndex, privateKey, signers, publicKeys, pSigs)
 
 	log.Info("ringSig: ", ringSig)
+
+	// if err != nil {
+	// 	log.Warn(err)
+	// 	if strings.Contains(err.Error(), "Failed to leader_sign") {
+
+	// 		//pause before retrying
+	// 		err = nil
+	// 		time.Sleep(time.Duration(2000) * time.Millisecond)
+	// 		log.Info("Retrying")
+	// 		setUpSignatures(tx)
+	// 	}
+	// }
+
+	verify := verify(message, ringSig, publicKeys)
+
+	log.Info("Is the Ring Sig Valid? ", verify)
 
 }
 
