@@ -22,7 +22,6 @@ import (
 //Transaction - Sruct to compose transactions
 type Transaction struct {
 	TxID          string    `json:"txID"`
-	UserID        string    `json:"userID"`
 	RingSignature string    `json:"ringSignature"`
 	SignersCount  int       `json:"signersCount"`
 	CreatedAt     time.Time `json:"createdAt"`
@@ -33,6 +32,7 @@ type Transaction struct {
 
 //Message - details of the transaction
 type Message struct {
+	UserID             string `json:"userID"`
 	Amount             int64  `json:"amount"`
 	Currency           string `json:"currency"`
 	DestinationAddress string `json:"destinationAddress"`

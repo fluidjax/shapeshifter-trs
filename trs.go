@@ -12,6 +12,8 @@ package main
 import "C"
 import "unsafe"
 import "fmt"
+import "errors"
+import log "github.com/Sirupsen/logrus"
 
 
 //------------------------------------------
@@ -86,8 +88,7 @@ func Keygen() (publicKey []byte, privateKey[]byte) {
 		&ptr_private_key_length)
 
 	if result != 0 {
-		fmt.Println("Panicking!")
-		panic("Failed to create public private key")
+		log.Warn("Failed to create public private key")
 	}
 
 	publicKey = C.GoBytes(
@@ -136,8 +137,7 @@ func ParticipantSign(message []byte, private_key []byte, signers []uint, public_
 		(*C.uchar)(unsafe.Pointer(&public_keys[0])))
 
 	if result != 0 {
-		fmt.Println("Panicking!")
-		panic("Failed to participant_sign")
+		log.Warn("Failed to participant_sign")
 	}
 
 	signature := C.GoBytes(
@@ -160,7 +160,7 @@ func ParticipantSign(message []byte, private_key []byte, signers []uint, public_
 //! \param public_keys            input  : array of all the public keys concatanated
 //! \param signature              output : the ring leader signature
 //!
-func leader_sign(message []byte, leader_index uint, private_key []byte, signers []uint, public_keys []byte, participant_signatures []byte) []byte {
+func leader_sign(message []byte, leader_index uint, private_key []byte, signers []uint, public_keys []byte, participant_signatures []byte) (lSig []byte, err error) {
 
 	signature_length := C.qredo_get_ring_signature_size()
 	ptr_signature := C.malloc(C.size_t(signature_length))
@@ -185,15 +185,14 @@ func leader_sign(message []byte, leader_index uint, private_key []byte, signers 
 		(*C.uchar)(unsafe.Pointer(&participant_signatures[0])))
 
 	if result != 0 {
-		fmt.Println("Panicking!")
-		panic("Failed to leader_sign")
+		err = errors.New("Failed to leader_sign")
 	}
 
 	signature := C.GoBytes(
 		ptr_signature,
 		C.int(signature_length))
 
-	return signature
+	return signature, err
 }
 
 //------------------------------------------
@@ -263,7 +262,7 @@ func verify(message []byte, ring_signature []byte, public_keys []byte) bool {
 	}
 
 	// leader/ring signature
-	leader_signature := leader_sign(message, leader, private_keys[leader], signers, public_keys, participants_signatures)
+	leader_signature, _ := leader_sign(message, leader, private_keys[leader], signers, public_keys, participants_signatures)
 
 	fmt.Println("leader_signature = ", leader_signature)
 
