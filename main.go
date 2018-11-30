@@ -110,7 +110,7 @@ func postApprovalRequest(approvalRequest ApprovalRequest) {
 	if err != nil {
 		log.Warn(err)
 	}
-
+	log.Info("Got approval from: ", approvalRequestResponse.URL)
 	//this needs to be refactored maybe
 	updatedTX, err := StoreApproval(approvalRequestResponse)
 	if err != nil {
@@ -130,11 +130,9 @@ func postApprovalRequest(approvalRequest ApprovalRequest) {
 			}
 		}
 
-		if approvals < updatedTX.Policy.Threshold {
-			log.Info("Wating for more approvals")
-		}
 		if approvals == updatedTX.Policy.Threshold {
-			go setUpSignatures(updatedTX)
+
+			go setUpSignatures(createRing(updatedTX))
 		}
 	}
 }
@@ -166,27 +164,60 @@ func handleApprovalRequest(w http.ResponseWriter, r *http.Request) {
 
 }
 
+//Generate pk and sk for all participants
+func createRing(tx Transaction) (updatedTX Transaction) {
+
+	//Put the participants in the right order
+
+	var reorder []Participant
+
+	for _, t := range tx.Policy.Participants {
+		// fmt.Printf("Index\t%v\tURL\t%v\tApproved\t%v\tLeader\t%v\t\n", i, t.URL, t.Approved, t.Leader)
+
+		if t.Approved {
+			reorder = append(reorder, t)
+		}
+	}
+	for _, t := range tx.Policy.Participants {
+		if !t.Approved {
+			reorder = append(reorder, t)
+		}
+	}
+
+	// fmt.Println("Reordered Participants")
+
+	// for i, t := range reorder {
+	// 	fmt.Printf("Index\t%v\tURL\t%v\tApproved\t%v\tLeader\t%v\t\n", i, t.URL, t.Approved, t.Leader)
+	// }
+
+	tx.Policy.Participants = reorder
+
+	var params Parameters
+
+	params.numberOfParticipants = uint(len(tx.Policy.Participants))
+	params.threshold = tx.Policy.Threshold
+
+	InitContext(params)
+
+	for i := range tx.Policy.Participants {
+		pK, sK := Keygen()
+		tx.Policy.Participants[i].PK = hex.EncodeToString(pK)
+		tx.Policy.Participants[i].SK = hex.EncodeToString(sK)
+	}
+
+	tx, err := StoreKeys(tx)
+	if err != nil {
+		log.Warn(err)
+	}
+
+	return tx
+
+}
+
 //Leader-side
 func setUpSignatures(tx Transaction) {
 
 	log.Info("Got enough approvals, let's go!")
-
-	// //shuffle participants to put signers at the front
-	// var reOrdered []Participant
-	// //Put the true ones at the start
-	// for _, p := range tx.Policy.Participants {
-	// 	if p.Approved {
-	// 		reOrdered = append(reOrdered, p)
-	// 	}
-	// }
-	// //And the false ones at the end
-	// for _, p := range tx.Policy.Participants {
-	// 	if !p.Approved {
-	// 		reOrdered = append(reOrdered, p)
-	// 	}
-	// }
-	// //Replace the participants with the re-ordered ones
-	// tx.Policy.Participants = reOrdered
 
 	var signersSlice []uint
 	var publicKeySlice []string

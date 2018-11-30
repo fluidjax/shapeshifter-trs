@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/hex"
 	"errors"
 	"strconv"
 
@@ -21,13 +20,12 @@ import (
 
 //Transaction - Sruct to compose transactions
 type Transaction struct {
-	TxID          string    `json:"txID"`
-	RingSignature string    `json:"ringSignature"`
-	SignersCount  int       `json:"signersCount"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
-	Message       Message   `json:"message"`
-	Policy        Policy    `json:"policy"`
+	TxID         string    `json:"txID"`
+	SignersCount int       `json:"signersCount"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+	Message      Message   `json:"message"`
+	Policy       Policy    `json:"policy"`
 }
 
 //Message - details of the transaction
@@ -40,9 +38,9 @@ type Message struct {
 
 //Policy - who can sign
 type Policy struct {
-	Participants         []Participant `json:"participants"`
-	NumberOfParticipants uint          `json:"numberOfParticipants"`
-	Threshold            uint          `json:"threshold"`
+	Participants []Participant `json:"participants"`
+	// NumberOfParticipants uint          `json:"numberOfParticipants"`
+	Threshold uint `json:"threshold"`
 }
 
 //Participant - Details of signers
@@ -66,28 +64,6 @@ type TransactionUpdate struct {
 	Signer   []int `json:":s"`
 }
 
-//Generate pk and sk for all participants
-func createRing(newTx Transaction) (tx Transaction, err error) {
-
-	tx = newTx
-
-	var params Parameters
-
-	params.numberOfParticipants = tx.Policy.NumberOfParticipants
-	params.threshold = tx.Policy.Threshold
-
-	InitContext(params)
-
-	for i := range tx.Policy.Participants {
-		pK, sK := Keygen()
-		tx.Policy.Participants[i].PK = hex.EncodeToString(pK)
-		tx.Policy.Participants[i].SK = hex.EncodeToString(sK)
-	}
-
-	return tx, err
-
-}
-
 //CreateTransaction - Insert Transaction into Dynamo DB
 func CreateTransaction(newTX Transaction) (tx Transaction, err error) {
 
@@ -106,10 +82,12 @@ func CreateTransaction(newTX Transaction) (tx Transaction, err error) {
 	tx.TxID = txID.String()
 	tx.CreatedAt = time.Now()
 	tx.UpdatedAt = time.Now()
-	tx.Policy.NumberOfParticipants = uint(len(tx.Policy.Participants))
+	// tx.Policy.NumberOfParticipants = uint(len(tx.Policy.Participants))
 	//I have to put a dummy value in the list... see below
 	// tx.Signers = append(tx.Signers, 0)
-	tx, err = createRing(tx)
+
+	//*******NEED TO MOVE THIS TO AFTER APPROVALS***********//
+	// tx, err = createRing(tx)
 
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String("eu-west-2")},
@@ -137,19 +115,17 @@ func CreateTransaction(newTX Transaction) (tx Transaction, err error) {
 }
 
 //StoreApproval - Update transaction when signing approval is received
-func StoreApproval(sr ApprovalRequest) (tx Transaction, err error) {
+func StoreApproval(ar ApprovalRequest) (tx Transaction, err error) {
 
 	config := &aws.Config{
 		Region: aws.String("eu-west-2"),
 	}
-
 	sess := session.Must(session.NewSession(config))
-
 	svc := dynamodb.New(sess)
 
 	//Many hours wasted here - see https://docs.aws.amazon.com/sdk-for-go/api/service/dynamodb/expression
 	update := expression.Set(
-		expression.Name("policy.participants["+strconv.Itoa(sr.RingIndex)+"].approved"),
+		expression.Name("policy.participants["+strconv.Itoa(ar.RingIndex)+"].approved"),
 		expression.Value(true),
 	).Set(
 		expression.Name("signersCount"),
@@ -163,7 +139,7 @@ func StoreApproval(sr ApprovalRequest) (tx Transaction, err error) {
 		ExpressionAttributeValues: expr.Values(),
 		Key: map[string]*dynamodb.AttributeValue{
 			"txID": {
-				S: aws.String(sr.TxID),
+				S: aws.String(ar.TxID),
 			},
 		},
 		TableName:           aws.String("Transactions"),
@@ -178,6 +154,43 @@ func StoreApproval(sr ApprovalRequest) (tx Transaction, err error) {
 
 	return tx, err
 
+}
+
+//StoreKeys - Update Transaction with keys
+func StoreKeys(tx Transaction) (updatedTX Transaction, err error) {
+
+	log.Info("Storing Keys for: ", tx.TxID)
+	config := &aws.Config{
+		Region: aws.String("eu-west-2"),
+	}
+	sess := session.Must(session.NewSession(config))
+	svc := dynamodb.New(sess)
+
+	update := expression.Set(
+		expression.Name("policy.participants"),
+		expression.Value(tx.Policy.Participants),
+	)
+
+	expr, err := expression.NewBuilder().WithUpdate(update).Build()
+
+	input := &dynamodb.UpdateItemInput{
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+		Key: map[string]*dynamodb.AttributeValue{
+			"txID": {
+				S: aws.String(tx.TxID),
+			},
+		},
+		TableName:        aws.String("Transactions"),
+		ReturnValues:     aws.String("ALL_NEW"),
+		UpdateExpression: expr.Update(),
+	}
+
+	result, err := svc.UpdateItem(input)
+
+	dynamodbattribute.UnmarshalMap(result.Attributes, &tx)
+
+	return tx, err
 }
 
 //StorePSig - record PSig
